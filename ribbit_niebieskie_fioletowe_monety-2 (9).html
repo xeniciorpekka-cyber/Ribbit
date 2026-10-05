@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ribbit - Wielka Gra o Żabach</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0f2027;
+            font-family: 'Comic Sans MS', 'Arial', sans-serif;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 400px;
+            height: 600px;
+            background: #1e1e2f;
+            border: 4px solid #00ffcc;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        canvas {
+            display: block;
+        }
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        h1 {
+            color: #00ffcc;
+            font-size: 2.3rem;
+            margin-bottom: 5px;
+            text-shadow: 2px 2px #ff007f;
+        }
+        p {
+            font-size: 1rem;
+            margin: 6px 20px;
+            text-align: center;
+            color: #ddd;
+        }
+        button {
+            background: #ff007f;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 10px;
+            box-shadow: 0 4px 10px rgba(255, 0, 127, 0.4);
+            -webkit-tap-highlight-color: transparent;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        .secondary-btn {
+            background: #333;
+            border: 2px solid #00ffcc;
+            margin-top: 8px;
+        }
+        .shop-item {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #444;
+            border-radius: 10px;
+            padding: 8px 15px;
+            margin: 5px 0;
+            width: 80%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .shop-item.unlocked {
+            border-color: #00ffcc;
+        }
+        .shop-item.selected {
+            border-color: #ffcc00;
+            background: rgba(255, 204, 0, 0.15);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- Ekran Startowy -->
+        <div id="start-screen" class="screen">
+            <h1>RIBBIT</h1>
+            <p>Bagno wzywa! zmierz sie z wieloma przeszkodami i zbieraj monety za ktore możesz kupić niesamowite skiny</p>
+            <p id="total-points" style="color: #ffcc00; font-weight: bold;">Żabie Punkty ogółem: 0 🐸</p>
+            <p id="chest-count" style="color: #ffd700; font-weight: bold;">
+    Skrzynie: 0 📦
+</p>
+<button onclick="openChest()">📦 Otwórz skrzynię</button>
+<p id="shield-count" style="color: #66ffcc; font-weight: bold;">
+    Tarcze: 0 🛡️
+</p>
+            <button id="play-btn">GRAJ</button>
+            <button id="shop-open-btn" class="secondary-btn">SKLEP ZE SKINAMI</button>
+        </div>
+
+        <!-- Ekran Sklepu -->
+        <div id="shop-screen" class="screen" style="display: none;">
+            <h1>Sklep</h1>
+            <p id="shop-points" style="color: #ffcc00; font-weight: bold;">Punkty: 0 🐸</p>
+            <div id="shop-list" style="width: 100%; display: flex; flex-direction: column; align-items: center; max-height: 280px; overflow-y: auto;">
+            </div>
+            <button id="shop-back-btn" class="secondary-btn">POWRÓT</button>
+        </div>
+
+        <!-- Ekran Przegranej -->
+        <div id="gameover-screen" class="screen" style="display: none;">
+            <h1>Koniec Gry!</h1>
+            <p id="final-score">Wynik: 0</p>
+            <p id="session-coins" style="color: #ffcc00; font-weight: bold;">Zdobyte monety: +0 🐸</p>
+            <button id="restart-btn">GRAJ PONOWNIE</button>
+            <button id="menu-btn" class="secondary-btn">MENU GŁÓWNE</button>
+        </div>
+
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+    </div>
+<div id="chest-shop" style="
+    display: block;
+    margin: 20px auto;
+    padding: 15px;
+    max-width: 300px;
+    border: 2px solid #ffd700;
+    border-radius: 12px;
+    text-align: center;
+">
+    <h3>📦 SKRZYNIE</h3>
+
+    <p>
+        Kup skrzynię za 100 żabich monet 🪙
+    </p>
+
+    <button onclick="buyChest()">
+        📦 KUP SKRZYNIĘ - 100 🪙
+    </button>
+</div>
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let gameInterval;
+    let frog, obstacles, coins, trampolines, score, sessionCoins, level, isGameOver;
+    let backgroundX = 0;
+    let clouds = [];
+    
+    let totalPoints = parseInt(localStorage.getItem('ribbit_total_points')) || 0;
+    let unlockedSkins = JSON.parse(localStorage.getItem('ribbit_unlocked_skins')) || ['default'];
+    let currentSkin = localStorage.getItem('ribbit_current_skin') || 'default';
+let chestCount = parseInt(localStorage.getItem('ribbit_chests')) || 0;
+let shieldCount = parseInt(localStorage.getItem('ribbit_shields')) || 0;
+
+    // Konfiguracja skinów (ta sama żaba w różnych kolorach)
+    const skins = {
+        default: { name: 'Klasyczna Żaba', price: 0, val: '🐸', filter: 'none' },
+        yellowGreen: { name: 'Żółto-zielona Żaba', price: 60, val: '🐸', filter: 'hue-rotate(60deg)' },
+        blueCyan: { name: 'Niebieska Żaba', price: 100, val: '🐸', filter: 'hue-rotate(180deg)' },
+        redBlack: { name: 'Czerwona Żaba', price: 120, val: '🐸', filter: 'hue-rotate(300deg)' },
+        purpleMagenta: { name:'Fioletowa żaba', price: 150, val: '🐸',filter: 'hue-rotate(270deg'},
+        yellowBlack: {
+    name: 'Drzewołaz',
+    price: 180,
+    val: '🐸',
+    filter: 'none',
+    baseColor: '#ffd900',
+    spots: true
+},
+
+
+blueBlack: {
+    name: 'Niebieski drzewołaz',
+    price: 180,
+    val: '🐸',
+    filter: 'none',
+    baseColor: '#008cff',
+    spots: true
+}
+
+
+    };
+
+    updateUIPoints();
+
+    function updateUIPoints() {
+    document.getElementById("total-points").innerText =
+        `Żabie Punkty ogółem: ${totalPoints} 🐸`;
+
+    document.getElementById("shop-points").innerText =
+        `Punkty: ${totalPoints} 🐸`;
+
+    document.getElementById("chest-count").innerText =
+        `Skrzynie: ${chestCount} 📦`;
+
+    document.getElementById("shield-count").innerText =
+        `Tarcze: ${shieldCount} 🛡️`;
+}
+
+    function initClouds() {
+        clouds = [
+            { x: 50, y: 60, width: 70, speed: 0.3 },
+            { x: 220, y: 100, width: 90, speed: 0.2 },
+            { x: 350, y: 40, width: 60, speed: 0.4 }
+        ];
+    }
+
+    function startGame() {
+        hideChestShop();
+        document.getElementById("start-screen").style.display = "none";
+        document.getElementById("gameover-screen").style.display = "none";
+        document.getElementById("shop-screen").style.display = "none";
+
+        frog = {
+            x: 80,
+            y: 300,
+            radius: 15,
+            gravity: 0.46,
+            lift: -8.8,
+            velocity: 0,
+            jumpsLeft: 2
+        };
+
+        obstacles = [];
+        coins = [];
+        trampolines = [];
+        score = 0;
+        sessionCoins = 0;
+        level = 1;
+        isGameOver = false;
+        backgroundX = 0;
+        initClouds();
+
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = setInterval(update, 1000 / 60);
+    }
+
+    function jump() {
+        if (isGameOver) return;
+        if (frog.jumpsLeft > 0) {
+            frog.velocity = frog.lift;
+            frog.jumpsLeft--;
+        }
+    }
+
+    document.getElementById("play-btn").addEventListener("click", startGame);
+    document.getElementById("restart-btn").addEventListener("click", startGame);
+    document.getElementById("menu-btn").addEventListener("click", () => {
+        document.getElementById("gameover-screen").style.display = "none";
+        document.getElementById("start-screen").style.display = "flex";
+        updateUIPoints();
+    });
+
+    document.getElementById("shop-open-btn").addEventListener("click", openShop);
+    document.getElementById("shop-back-btn").addEventListener("click", () => {
+        document.getElementById("shop-screen").style.display = "none";
+        document.getElementById("start-screen").style.display = "flex";
+        updateUIPoints();
+    });
+
+    function openShop() {
+        document.getElementById("start-screen").style.display = "none";
+        document.getElementById("shop-screen").style.display = "flex";
+        renderShop();
+    }
+
+    function renderShop() {
+        const list = document.getElementById("shop-list");
+        list.innerHTML = "";
+
+        for (let key in skins) {
+            let skin = skins[key];
+            let isUnlocked = unlockedSkins.includes(key);
+            let isSelected = currentSkin === key;
+
+            let div = document.createElement("div");
+            div.className = `shop-item ${isUnlocked ? 'unlocked' : ''} ${isSelected ? 'selected' : ''}`;
+            
+            let infoText = isUnlocked 
+                ? (isSelected ? "WYBRANA" : "POSIADANA") 
+                : `Cena: ${skin.price} 🐸`;
+
+            div.innerHTML = `
+                <div>
+                    <strong>${skin.val} ${skin.name}</strong><br>
+                    <small style="color: #aaa;">${infoText}</small>
+                </div>
+            `;
+
+            let actionBtn = document.createElement("button");
+            actionBtn.style.padding = "6px 12px";
+            actionBtn.style.fontSize = "0.9rem";
+
+            if (!isUnlocked) {
+                actionBtn.innerText = "KUP";
+                actionBtn.style.background = "#ff007f";
+                actionBtn.onclick = () => {
+                    if (totalPoints >= skin.price) {
+                        totalPoints -= skin.price;
+                        unlockedSkins.push(key);
+                        currentSkin = key;
+                        saveData();
+                        updateUIPoints();
+                        renderShop();
+                    } else {
+                        alert("Za mało żabich punktów!");
+                    }
+                };
+            } else if (!isSelected) {
+                actionBtn.innerText = "WYBIERZ";
+                actionBtn.style.background = "#00ffcc";
+                actionBtn.style.color = "#000";
+                actionBtn.onclick = () => {
+                    currentSkin = key;
+                    saveData();
+                    renderShop();
+                };
+            } else {
+                actionBtn.innerText = "OK";
+                actionBtn.disabled = true;
+                actionBtn.style.background = "#555";
+            }
+
+            div.appendChild(actionBtn);
+            list.appendChild(div);
+        }
+    }
+
+    function saveData() {
+    localStorage.setItem('ribbit_total_points', totalPoints);
+    localStorage.setItem('ribbit_unlocked_skins', JSON.stringify(unlockedSkins));
+    localStorage.setItem('ribbit_current_skin', currentSkin);
+
+    localStorage.setItem('ribbit_chests', chestCount);
+    localStorage.setItem('ribbit_shields', shieldCount);
+    
+
+    
+    }
+    function hideChestShop() {
+    const chestShop = document.getElementById('chest-shop');
+
+    if (chestShop) {
+        chestShop.style.display = 'none';
+    }
+}
+    // ==================== SYSTEM OTWIERANIA SKRZYŃ ====================
+function buyChest() {
+    if (totalPoints < 100) {
+        alert('❌ Nie masz wystarczająco żabich monet!');
+        return;
+    }
+
+    totalPoints -= 100;
+    chestCount++;
+
+    saveData();
+    updateUIPoints();
+
+    alert('📦 Kupiono skrzynię za 100 żabich monet!');
+}
+function openChest() {
+    if (chestCount <= 0) {
+        alert('📦 Nie masz żadnej skrzyni!');
+        return;
+    }
+
+    // Zabieramy skrzynię dopiero po rozpoczęciu otwierania
+    chestCount--;
+
+    const roll = Math.random() * 100;
+    let rewardText = '';
+
+    if (roll < 60) {
+        // 60% - 50 monet
+        totalPoints += 50;
+        rewardText = '🪙 +50 żabich monet!';
+    } 
+    else if (roll < 93) {
+        // 33% - 80 monet
+        totalPoints += 80;
+        rewardText = '🪙 +80 żabich monet!';
+    } 
+    else if (roll < 98.7) {
+        // 5,7% - zwykły skin
+        rewardText = '🎨 Wypadł zwykły skin!';
+    } 
+    else if (roll < 99.7) {
+        // 1% - rzadki skin / drzewołaz
+        rewardText = '🌳✨ WYPADŁ DRZEWOŁAZ!';
+    } 
+    else {
+        // 0,3% - tarcza
+        shieldCount++;
+        rewardText = '🛡️ WYPADŁA TARCZA! Chroni przed jedną śmiercią!';
+    }
+
+    saveData();
+    updateUIPoints();
+
+    alert(
+        '📦 SKRZYNIA OTWARTA!\n\n' +
+        rewardText
+    );
+}
+
+    window.addEventListener('keydown', e => {
+        if (e.code === 'Space') {
+            e.preventDefault();
+            jump();
+        }
+    });
+
+    canvas.addEventListener('click', jump);
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        jump();
+    });
+
+    function spawnGameElements() {
+        const types = ['pipe', 'spike', 'acid', 'eagle'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        
+        let obs = {
+            x: canvas.width,
+            type: type,
+            width: 35,
+            height: type === 'pipe' ? (Math.random() * 55 + 40) : (type === 'acid' ? 20 : 32),
+            y: 0,
+            passed: false
+        };
+
+        if (type === 'pipe') {
+            obs.y = canvas.height - obs.height - 45;
+        } else if (type === 'spike') {
+            obs.height = 35;
+            obs.y = canvas.height - obs.height - 45;
+        } else if (type === 'acid') {
+            obs.y = canvas.height - obs.height - 45;
+        } else if (type === 'eagle') {
+            obs.y = Math.random() * 180 + 70;
+        }
+
+        obstacles.push(obs);
+
+        // Monety: 90% zwykła, 3% niebieska, 1.5% fioletowa.
+        // Każda moneta daje odpowiednio 1, 5 albo 10 Żabich Punktów.
+        const coinRoll = Math.random();
+        if (coinRoll < 0.45) {
+            coins.push({
+                x: canvas.width + 15,
+                y: Math.random() * 200 + 250,
+                radius: 11,
+                collected: false,
+                type: 'normal',
+                value: 1
+            });
+        } else if (coinRoll < 0.85) {
+            coins.push({
+                x: canvas.width + 15,
+                y: Math.random() * 200 + 250,
+                radius: 11,
+                collected: false,
+                type: 'blue',
+                value: 5
+            });
+        } else {
+            coins.push({
+                x: canvas.width + 15,
+                y: Math.random() * 200 + 250,
+                radius: 11,
+                collected: false,
+                type: 'purple',
+                value: 10
+            });
+        }
+
+        if (Math.random() > 0.6 && type !== 'eagle') {
+            trampolines.push({
+                x: canvas.width + 40,
+                y: canvas.height - 45 - 15,
+                width: 35,
+                height: 15
+            });
+        }
+    }
+
+    let frameCount = 0;
+    function update() {
+        if (isGameOver) return;
+
+        frameCount++;
+        backgroundX -= 1;
+
+        clouds.forEach(cloud => {
+            cloud.x -= cloud.speed;
+            if (cloud.x + cloud.width < 0) {
+                cloud.x = canvas.width + 20;
+                cloud.y = Math.random() * 120 + 20;
+            }
+        });
+
+        let spawnRate = Math.max(90 - Math.floor(level / 3), 50);
+        if (frameCount % spawnRate === 0) {
+            spawnGameElements();
+        }
+
+        frog.velocity += frog.gravity;
+        frog.y += frog.velocity;
+
+        if (frog.y > canvas.height - 45 - frog.radius) {
+            frog.y = canvas.height - 45 - frog.radius;
+            frog.velocity = 0;
+            frog.jumpsLeft = 2;
+        }
+
+        if (frog.y < frog.radius) {
+            frog.y = frog.radius;
+            frog.velocity = 0;
+        }
+
+        let gameSpeed = 2.8 + (level * 0.03);
+
+        for (let i = trampolines.length - 1; i >= 0; i--) {
+            trampolines[i].x -= gameSpeed;
+            let t = trampolines[i];
+            
+            if (
+                frog.x + frog.radius > t.x &&
+                frog.x - frog.radius < t.x + t.width &&
+                frog.y + frog.radius >= t.y &&
+                frog.y - frog.radius < t.y + t.height &&
+                frog.velocity > 0
+            ) {
+                frog.velocity = -14;
+                frog.jumpsLeft = 1;
+            }
+
+            if (t.x + t.width < 0) {
+                trampolines.splice(i, 1);
+            }
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            obstacles[i].x -= gameSpeed;
+
+            if (!obstacles[i].passed && obstacles[i].x < frog.x) {
+                obstacles[i].passed = true;
+                score++;
+
+const oldLevel = level;
+level = Math.floor(score / 5) + 1;
+
+// Nagroda za poziom 10, 20, 30, 40...
+if (level > oldLevel && level % 10 === 0) {
+    const newChests = level / 10;
+
+    chestCount += newChests;
+
+    saveData();
+    updateUIPoints();
+
+    alert(
+        `🎉 Osiągnięto poziom ${level}!\n\n` +
+        `📦 Otrzymujesz ${newChests} ${newChests === 1 ? 'skrzynię' : 'skrzynie'}!`
+    );
+}
+            }
+
+            let obs = obstacles[i];
+            let hitMargin = 5;
+            if (
+                frog.x + frog.radius - hitMargin > obs.x &&
+                frog.x - frog.radius + hitMargin < obs.x + obs.width &&
+                frog.y + frog.radius - hitMargin > obs.y &&
+                frog.y - frog.radius + hitMargin < obs.y + obs.height
+            ) {
+                gameOver();
+            }
+
+            if (obs.x + obs.width < 0) {
+                obstacles.splice(i, 1);
+            }
+        }
+
+        for (let i = coins.length - 1; i >= 0; i--) {
+            coins[i].x -= gameSpeed;
+            let c = coins[i];
+
+            if (!c.collected) {
+                let distX = frog.x - c.x;
+                let distY = frog.y - c.y;
+                if (Math.sqrt(distX * distX + distY * distY) < frog.radius + c.radius) {
+                    c.collected = true;
+                    sessionCoins += c.value || 1;
+                }
+            }
+
+            if (c.x + c.radius < 0) {
+                coins.splice(i, 1);
+            }
+        }
+
+        draw();
+    }
+
+    function gameOver() {
+        isGameOver = true;
+        clearInterval(gameInterval);
+        totalPoints += sessionCoins;
+        saveData();
+        
+        document.getElementById("final-score").innerText = `Wynik: ${score} (Poziom: ${level})`;
+        document.getElementById("session-coins").innerText = `Zdobyte monety: +${sessionCoins} 🐸 (Razem: ${totalPoints})`;
+        document.getElementById("total-points").innerText = `Żabie Punkty ogółem: ${totalPoints} 🐸`;
+        document.getElementById("gameover-screen").style.display = "flex";
+    }
+
+    function draw() {
+        let nightFactor = Math.min(1, (level - 1) / 20); 
+        
+        let rTop = Math.floor(15 - 10 * nightFactor);
+        let gTop = Math.floor(32 - 25 * nightFactor);
+        let bTop = Math.floor(39 - 30 * nightFactor);
+
+        let rBot = Math.floor(44 - 30 * nightFactor);
+        let gBot = Math.floor(58 - 45 * nightFactor);
+        let bBot = Math.floor(67 - 50 * nightFactor);
+
+        let skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        skyGradient.addColorStop(0, `rgb(${rTop}, ${gTop}, ${bTop})`);
+        skyGradient.addColorStop(1, `rgb(${rBot}, ${gBot}, ${bBot})`);
+        ctx.fillStyle = skyGradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (nightFactor > 0.3) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${nightFactor * 0.8})`;
+            ctx.fillRect(80, 50, 2, 2);
+            ctx.fillRect(160, 30, 2, 2);
+            ctx.fillRect(280, 70, 3, 3);
+            ctx.fillRect(340, 20, 2, 2);
+            ctx.fillRect(50, 110, 2, 2);
+        }
+
+        ctx.fillStyle = `rgba(200, 220, 210, ${0.35 - nightFactor * 0.15})`;
+        clouds.forEach(cloud => {
+            ctx.beginPath();
+            ctx.arc(cloud.x, cloud.y, cloud.width * 0.3, 0, Math.PI * 2);
+            ctx.arc(cloud.x + cloud.width * 0.3, cloud.y - 10, cloud.width * 0.35, 0, Math.PI * 2);
+            ctx.arc(cloud.x + cloud.width * 0.6, cloud.y, cloud.width * 0.25, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.fillStyle = "rgba(10, 35, 25, 0.5)";
+        ctx.fillRect(0, canvas.height - 160, canvas.width, 115);
+
+        ctx.fillStyle = "rgba(15, 50, 35, 0.7)";
+        for (let i = -20; i < canvas.width + 40; i += 40) {
+            let offset = (i + Math.floor(backgroundX * 0.6)) % (canvas.width + 60);
+            if (offset < -20) offset += canvas.width + 60;
+            ctx.beginPath();
+            ctx.moveTo(offset, canvas.height - 45);
+            ctx.lineTo(offset + 4, canvas.height - 90);
+            ctx.lineTo(offset + 8, canvas.height - 45);
+            ctx.fill();
+        }
+
+        let groundGradient = ctx.createLinearGradient(0, canvas.height - 45, 0, canvas.height);
+        groundGradient.addColorStop(0, "#2c5e3b");
+        groundGradient.addColorStop(1, "#11261a");
+        ctx.fillStyle = groundGradient;
+        ctx.fillRect(0, canvas.height - 45, canvas.width, 45);
+
+        ctx.fillStyle = "#1b3b28";
+        ctx.fillRect(0, canvas.height - 45, canvas.width, 8);
+
+        obstacles.forEach(obs => {
+            if (obs.type === 'pipe') {
+                ctx.fillStyle = "#00ffcc";
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            } else if (obs.type === 'spike') {
+                ctx.fillStyle = "#ff0055";
+                ctx.beginPath();
+                ctx.moveTo(obs.x, obs.y + obs.height);
+                ctx.lineTo(obs.x + obs.width / 2, obs.y);
+                ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
+                ctx.closePath();
+                ctx.fill();
+            } else if (obs.type === 'acid') {
+                ctx.fillStyle = "#bfff00";
+                ctx.fillRect(obs.x, obs.y + 5, obs.width, obs.height - 5);
+            } else if (obs.type === 'eagle') {
+                ctx.font = "26px Arial";
+                ctx.fillText("🦅", obs.x, obs.y + 22);
+            }
+        });
+
+        trampolines.forEach(t => {
+            ctx.fillStyle = "#ff9900";
+            ctx.fillRect(t.x, t.y, t.width, t.height);
+            ctx.fillStyle = "#ffcc00";
+            ctx.fillRect(t.x + 3, t.y + 3, t.width - 6, 4);
+        });
+
+        coins.forEach(c => {
+            if (!c.collected) {
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+
+                if (c.type === 'blue') {
+                    ctx.fillStyle = "#00aaff";
+                    ctx.strokeStyle = "#0066ff";
+                } else if (c.type === 'purple') {
+                    ctx.fillStyle = "#b000ff";
+                    ctx.strokeStyle = "#7200aa";
+                } else {
+                    ctx.fillStyle = "#ffcc00";
+                    ctx.strokeStyle = "#ff9900";
+                }
+
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+
+                // Mały symbol wartości na specjalnych monetach
+                if (c.type === 'blue' || c.type === 'purple') {
+                    ctx.fillStyle = "white";
+                    ctx.font = "bold 10px Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(c.value, c.x, c.y);
+                    ctx.textAlign = "start";
+                    ctx.textBaseline = "alphabetic";
+                }
+            }
+        });
+
+        // Rysowanie wybranego skina żaby w odpowiednim kolorze
+        ctx.save();
+
+let currentSkinData = skins[currentSkin] || skins.default;
+
+if (currentSkin === 'yellowBlack' || currentSkin === 'blueBlack') {
+
+    const frogCanvas = document.createElement('canvas');
+    frogCanvas.width = 40;
+    frogCanvas.height = 40;
+
+    const fctx = frogCanvas.getContext('2d');
+
+    // MASKA ŻABY
+    fctx.font = "30px Arial";
+    fctx.textAlign = "center";
+    fctx.textBaseline = "middle";
+    fctx.fillStyle = "white";
+    fctx.fillText("🐸", 20, 20);
+
+    // KOLOR BAZOWY
+    fctx.globalCompositeOperation = "source-in";
+    fctx.fillStyle =
+        currentSkin === 'yellowBlack'
+            ? "#FFD900"
+            : "#168CFF";
+
+    fctx.fillRect(0, 0, 40, 40);
+
+    // PLAMY
+    fctx.globalCompositeOperation = "source-over";
+    fctx.fillStyle = "#050505";
+
+    // LEWA STRONA
+    fctx.beginPath();
+    fctx.arc(9, 13, 3.8, 0, Math.PI * 2);
+    fctx.fill();
+
+    fctx.beginPath();
+    fctx.arc(8, 25, 3.2, 0, Math.PI * 2);
+    fctx.fill();
+
+    // PRAWA STRONA
+    fctx.beginPath();
+    fctx.arc(31, 13, 3.8, 0, Math.PI * 2);
+    fctx.fill();
+
+    fctx.beginPath();
+    fctx.arc(32, 25, 3.2, 0, Math.PI * 2);
+    fctx.fill();
+
+    // MASKA, ŻEBY PLAMY NIE WYCHODZIŁY POZA ŻABĘ
+    const mask = document.createElement('canvas');
+    mask.width = 40;
+    mask.height = 40;
+
+    const mctx = mask.getContext('2d');
+    mctx.font = "30px Arial";
+    mctx.textAlign = "center";
+    mctx.textBaseline = "middle";
+    mctx.fillText("🐸", 20, 20);
+
+    fctx.globalCompositeOperation = "destination-in";
+    fctx.drawImage(mask, 0, 0);
+
+    // GOTOWA ŻABA
+    ctx.drawImage(
+        frogCanvas,
+        frog.x - 20,
+        frog.y - 20
+    );
+
+    // UNIKALNE OCZY I USTA
+ctx.globalCompositeOperation = "source-over";
+
+// Kolory zależne od odmiany
+const faceColor =
+    currentSkin === 'yellowBlack'
+        ? "#32CD32"   // zielony
+        : "#9B30FF";  // fioletowy
+
+// ===== OCZY =====
+ctx.fillStyle = faceColor;
+
+// lewe oko
+ctx.beginPath();
+ctx.arc(frog.x - 7, frog.y - 7, 3.2, 0, Math.PI * 2);
+ctx.fill();
+
+// prawe oko
+ctx.beginPath();
+ctx.arc(frog.x + 7, frog.y - 7, 3.2, 0, Math.PI * 2);
+ctx.fill();
+
+// źrenice
+ctx.fillStyle = "#050505";
+
+ctx.beginPath();
+ctx.arc(frog.x - 7, frog.y - 7, 1.2, 0, Math.PI * 2);
+ctx.fill();
+
+ctx.beginPath();
+ctx.arc(frog.x + 7, frog.y - 7, 1.2, 0, Math.PI * 2);
+ctx.fill();
+
+// ===== SZEROKIE USTA =====
+ctx.strokeStyle = faceColor;
+ctx.lineWidth = 2.5;
+ctx.lineCap = "round";
+
+ctx.beginPath();
+
+ctx.moveTo(frog.x - 7, frog.y + 5);
+
+ctx.quadraticCurveTo(
+    frog.x,
+    frog.y + 11,
+    frog.x + 7,
+    frog.y + 5
+);
+
+ctx.stroke();
+
+ctx.lineCap = "butt";
+
+} else {
+
+    // POZOSTAŁE SKÓRKI
+    ctx.filter = currentSkinData.filter || 'none';
+    ctx.font = "30px Arial";
+
+    ctx.fillText(
+        currentSkinData.val,
+        frog.x - 15,
+        frog.y + 10
+    );
+}
+
+ctx.restore();
+
+
+        ctx.fillStyle = "white";
+        ctx.font = "bold 16px Arial";
+        ctx.fillText(`Wynik: ${score}`, 20, 30);
+        ctx.fillText(`Monety: ${sessionCoins} 🐸`, 20, 55);
+        ctx.fillText(`Poziom: ${level}`, canvas.width - 90, 30);
+    }
+</script>
+
+</body>
+</html>
